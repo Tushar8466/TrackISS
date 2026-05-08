@@ -1,13 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
   ResponsiveContainer,
   AreaChart,
   Area
@@ -37,16 +37,104 @@ function App() {
   const [newsError, setNewsError] = useState(null);
   const [activeCategory, setActiveCategory] = useState('technology');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState('publishedAt'); // 'publishedAt' or 'source'
+  const [sortBy, setSortBy] = useState('publishedAt');  const [categoryCounts, setCategoryCounts] = useState({});
+
+  // Chatbot State
+  const [messages, setMessages] = useState(() => {
+    const saved = localStorage.getItem('chatbot_messages');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
 
   const mapRef = useRef(null);
   const markerRef = useRef(null);
   const polylineRef = useRef(null);
   const mapContainerRef = useRef(null);
+  const chatEndRef = useRef(null);
+
+  const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'];
+  const AI_TOKEN = import.meta.env.VITE_AI_TOKEN;
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
   }, [isDark]);
+
+  useEffect(() => {
+    localStorage.setItem('chatbot_messages', JSON.stringify(messages.slice(-30)));
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
+
+  const handleSendMessage = async (e) => {
+    if (e) e.preventDefault();
+    if (!chatInput.trim()) return;
+
+    const userMessage = { 
+      role: 'user', 
+      text: chatInput, 
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+    };
+    
+    setMessages(prev => [...prev, userMessage]);
+    setChatInput('');
+    setIsTyping(true);
+
+    // Prepare Context
+    const lastPos = positions[positions.length - 1] || { lat: 0, lng: 0 };
+    const currentSpeed = speedData[speedData.length - 1]?.speed || 0;
+    const astrosList = astros.people.map(p => p.name).join(', ');
+    const newsSummaries = articles.slice(0, 15).map(a => `${a.title}: ${a.description}`).join(' | ');
+
+    const systemPrompt = `You are an ISS Mission Control Assistant. You ONLY answer questions using the provided dashboard data. Do NOT use outside knowledge or guess. If information is missing, say you don't have that data.
+
+DASHBOARD DATA:
+- ISS Position: Latitude ${lastPos.lat.toFixed(4)}, Longitude ${lastPos.lng.toFixed(4)}
+- Speed: ${currentSpeed.toLocaleString()} km/h
+- Nearest Place: ${currentLocation}
+- Astronauts (${astros.number} total): ${astrosList}
+- Latest Headlines: ${newsSummaries}
+`;
+
+    const prompt = `<s>[INST] ${systemPrompt}\n\nUser Question: ${chatInput} [/INST]`;
+
+    try {
+      const response = await fetch("https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2", {
+        headers: { Authorization: `Bearer ${AI_TOKEN}`, "Content-Type": "application/json" },
+        method: "POST",
+        body: JSON.stringify({ inputs: prompt, parameters: { max_new_tokens: 250, return_full_text: false } }),
+      });
+
+      const data = await response.json();
+      
+      let botText = "";
+      if (Array.isArray(data) && data[0]?.generated_text) {
+        botText = data[0].generated_text.trim();
+      } else if (data.error) {
+        botText = `Error from AI Mission Control: ${data.error}`;
+      } else {
+        botText = "I encountered an error processing your request. Please try again.";
+      }
+
+      const botMessage = { 
+        role: 'bot', 
+        text: botText, 
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+      };
+      setMessages(prev => [...prev, botMessage]);
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'bot', text: 'Connection failed. AI Mission Control is offline.', timestamp: '--:--' }]);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const clearChat = () => {
+    setMessages([]);
+    localStorage.removeItem('chatbot_messages');
+  };
 
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -79,7 +167,7 @@ function App() {
       setLoading(false);
       setIssLoading(false);
     };
-    
+
     init();
     const interval = setInterval(fetchISS, 20000); // 20s to avoid 429 rate limiting
 
@@ -133,13 +221,13 @@ function App() {
 
     try {
       const res = await fetch(`https://gnews.io/api/v4/top-headlines?category=${category}&lang=en&apikey=${NEWS_API_KEY}`);
-      
+
       if (res.status === 429) {
         throw new Error('GNews rate limit exceeded. Please wait a moment.');
       }
-      
+
       const data = await res.json();
-      
+
       if (data.errors) {
         throw new Error(data.errors[0] || 'Failed to fetch news from GNews');
       }
@@ -168,13 +256,13 @@ function App() {
         setIssError('ISS API rate limit hit (429). Please wait 30 seconds.');
         return;
       }
-      
+
       const data = await res.json();
       if (!data || data.latitude === undefined) {
         setIssError('Malformed API response');
         return;
       }
-      
+
       const lat = parseFloat(data.latitude);
       const lng = parseFloat(data.longitude);
       const timestamp = data.timestamp;
@@ -197,16 +285,16 @@ function App() {
     if (isNaN(lat) || isNaN(lng)) return;
 
     const timeStr = new Date(timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    
+
     setPositions(prev => {
       const newPos = [...prev, { lat, lng, timestamp, timeStr }].slice(-50);
       const currentSpeed = velocity ? Math.round(velocity) : 27600;
       setSpeedData(prevSpeed => [...prevSpeed, { time: timeStr, speed: currentSpeed }].slice(-20));
-      
+
       // Only update marker if coordinates are valid
       if (markerRef.current) markerRef.current.setLatLng([lat, lng]);
       if (polylineRef.current) polylineRef.current.setLatLngs(newPos.map(p => [p.lat, p.lng]));
-      
+
       if (prev.length === 0 && mapRef.current) mapRef.current.setView([lat, lng], 3);
       return newPos;
     });
@@ -253,18 +341,18 @@ function App() {
       <main className="card tracking-card">
         <div className="card-header">
           <h2 className="card-title">ISS Live Tracking</h2>
-          <div style={{display:'flex', gap:'8px'}}>
+          <div style={{ display: 'flex', gap: '8px' }}>
             <button className="btn" onClick={fetchISS} disabled={issLoading}>
               {issLoading ? 'Fetching...' : 'Refresh Now'}
             </button>
-            <button className="btn" style={{borderColor: '#22c55e', color:'#22c55e'}}>Auto-Update: 20s</button>
+            <button className="btn" style={{ borderColor: '#22c55e', color: '#22c55e' }}>Auto-Update: 20s</button>
           </div>
         </div>
 
         {issError ? (
-          <div className="error-banner" style={{background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '12px', borderRadius: '8px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+          <div className="error-banner" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '12px', borderRadius: '8px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>⚠️ {issError}</span>
-            <button className="btn btn-sm" onClick={fetchISS} style={{padding: '4px 12px', fontSize: '0.8rem'}}>Try Again</button>
+            <button className="btn btn-sm" onClick={fetchISS} style={{ padding: '4px 12px', fontSize: '0.8rem' }}>Try Again</button>
           </div>
         ) : null}
 
@@ -279,7 +367,7 @@ function App() {
           </div>
           <div className="stat-item">
             <div className="stat-label">Nearest Place</div>
-            <div className="stat-value" style={{fontSize:'0.9rem'}}>{currentLocation}</div>
+            <div className="stat-value" style={{ fontSize: '0.9rem' }}>{currentLocation}</div>
           </div>
           <div className="stat-item">
             <div className="stat-label">Tracked Positions</div>
@@ -299,18 +387,18 @@ function App() {
             <AreaChart data={speedData}>
               <defs>
                 <linearGradient id="colorSpeed" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
               <XAxis dataKey="time" hide />
               <YAxis domain={['dataMin - 100', 'dataMax + 100']} hide />
-              <Tooltip 
+              <Tooltip
                 contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: '8px' }}
                 itemStyle={{ color: '#3b82f6' }}
               />
-              <Area type="monotone" dataKey="speed" stroke="#3b82f6" fillOpacity={1} fill="url(#colorSpeed)" strokeWidth={3}/>
+              <Area type="monotone" dataKey="speed" stroke="#3b82f6" fillOpacity={1} fill="url(#colorSpeed)" strokeWidth={3} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -325,8 +413,8 @@ function App() {
 
           <div className="news-tabs">
             {NEWS_CATEGORIES.map(cat => (
-              <button 
-                key={cat} 
+              <button
+                key={cat}
                 className={`news-tab ${activeCategory === cat ? 'active' : ''}`}
                 onClick={() => setActiveCategory(cat)}
               >
@@ -336,16 +424,16 @@ function App() {
           </div>
 
           <div className="news-controls">
-            <input 
-              type="text" 
-              placeholder="Search articles..." 
+            <input
+              type="text"
+              placeholder="Search articles..."
               className="search-input"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-            <select 
-              className="btn" 
-              value={sortBy} 
+            <select
+              className="btn"
+              value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
             >
               <option value="publishedAt">Sort by Date</option>
@@ -361,7 +449,7 @@ function App() {
             </div>
           ) : newsError ? (
             <div className="error-container">
-              <p style={{color: '#ef4444', marginBottom: '16px'}}>{newsError}</p>
+              <p style={{ color: '#ef4444', marginBottom: '16px' }}>{newsError}</p>
               <button className="btn" onClick={() => fetchNews(activeCategory, true)}>Retry</button>
             </div>
           ) : (
@@ -369,10 +457,10 @@ function App() {
               {filteredArticles.map((article, i) => (
                 <article key={i} className="news-item">
                   <div className="news-img-container">
-                    <img 
-                      src={article.image || 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=500&auto=format&fit=crop'} 
-                      alt={article.title} 
-                      className="news-img" 
+                    <img
+                      src={article.image || 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=500&auto=format&fit=crop'}
+                      alt={article.title}
+                      className="news-img"
                       onError={(e) => { e.target.src = 'https://via.placeholder.com/500x280?text=No+Image'; }}
                     />
                   </div>
@@ -384,8 +472,8 @@ function App() {
                     <h3>{article.title}</h3>
                     <p>{article.description || 'No description available for this article.'}</p>
                     <div className="news-footer">
-                      <small style={{color: 'var(--text-muted)'}}>By {article.author || 'Unknown'}</small>
-                      <a href={article.url} target="_blank" rel="noopener noreferrer" className="btn" style={{color: 'var(--accent)'}}>Read More</a>
+                      <small style={{ color: 'var(--text-muted)' }}>By {article.author || 'Unknown'}</small>
+                      <a href={article.url} target="_blank" rel="noopener noreferrer" className="btn" style={{ color: 'var(--accent)' }}>Read More</a>
                     </div>
                   </div>
                 </article>
@@ -397,24 +485,69 @@ function App() {
         <section className="card astronauts-card">
           <div className="card-header">
             <h2 className="card-title">People in Space</h2>
-            <div className="badge" style={{background:'#3b82f6', color:'white', padding:'4px 12px', borderRadius:'12px', fontSize:'0.8rem'}}>{astros.number} Total</div>
+            <div className="badge" style={{ background: '#3b82f6', color: 'white', padding: '4px 12px', borderRadius: '12px', fontSize: '0.8rem' }}>{astros.number} Total</div>
           </div>
           <div className="astro-grid">
             {astros.people.map((person, i) => (
               <div key={i} className="astro-item">
                 <div className="astro-avatar">{person.name.charAt(0)}</div>
                 <div className="astro-info">
-                  <div style={{fontWeight:'700'}}>{person.name}</div>
-                  <div style={{fontSize:'0.8rem', color:'var(--text-muted)'}}>{person.craft}</div>
+                  <div style={{ fontWeight: '700' }}>{person.name}</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{person.craft}</div>
                 </div>
               </div>
             ))}
           </div>
         </section>
       </div>
+
+      {/* AI Chatbot UI */}
+      <button className="chat-toggle" onClick={() => setIsChatOpen(!isChatOpen)}>
+        {isChatOpen ? '✖' : '💬'}
+      </button>
+
+      {isChatOpen && (
+        <div className="chat-window">
+          <div className="chat-header">
+            <span>AI Mission Control Assistant</span>
+            <button className="btn-clear" onClick={clearChat} title="Clear Chat">🗑️</button>
+          </div>
+          <div className="chat-messages">
+            {messages.length === 0 && (
+              <div className="chat-empty">
+                Ask me about ISS position, speed, astronauts, or space news!
+              </div>
+            )}
+            {messages.map((msg, i) => (
+              <div key={i} className={`chat-bubble ${msg.role}`}>
+                <div className="bubble-text">{msg.text}</div>
+                <div className="bubble-time">{msg.timestamp}</div>
+              </div>
+            ))}
+            {isTyping && (
+              <div className="chat-bubble bot typing">
+                <div className="typing-dots">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+          <form className="chat-input-area" onSubmit={handleSendMessage}>
+            <input 
+              type="text" 
+              placeholder="Type a message..." 
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+            />
+            <button type="submit" disabled={isTyping}>Send</button>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
 
 export default App;
+
 
