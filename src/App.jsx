@@ -28,6 +28,8 @@ function App() {
   const [speedData, setSpeedData] = useState([]);
   const [isDark, setIsDark] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [issError, setIssError] = useState(null);
+  const [issLoading, setIssLoading] = useState(false);
 
   // News State
   const [articles, setArticles] = useState([]);
@@ -71,13 +73,15 @@ function App() {
     polylineRef.current = L.polyline([], { color: '#3b82f6', weight: 3, opacity: 0.6 }).addTo(mapRef.current);
 
     const init = async () => {
+      setIssLoading(true);
       await fetchISS();
       fetchAstros();
       setLoading(false);
+      setIssLoading(false);
     };
     
     init();
-    const interval = setInterval(fetchISS, 10000);
+    const interval = setInterval(fetchISS, 20000); // 20s to avoid 429 rate limiting
 
     return () => {
       clearInterval(interval);
@@ -96,6 +100,7 @@ function App() {
   const fetchAstros = async () => {
     try {
       const res = await fetch(ASTROS_API);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setAstros(data);
     } catch (err) {
@@ -106,6 +111,7 @@ function App() {
   const fetchNews = async (category, forceRefresh = false) => {
     setNewsLoading(true);
     setNewsError(null);
+    if (forceRefresh) setArticles([]); // Clear articles to ensure skeleton is visible
 
     const cacheKey = `news_cache_${category}`;
     const cached = localStorage.getItem(cacheKey);
@@ -126,8 +132,12 @@ function App() {
     }
 
     try {
-      // GNews API structure: category, lang, apikey
       const res = await fetch(`https://gnews.io/api/v4/top-headlines?category=${category}&lang=en&apikey=${NEWS_API_KEY}`);
+      
+      if (res.status === 429) {
+        throw new Error('GNews rate limit exceeded. Please wait a moment.');
+      }
+      
       const data = await res.json();
       
       if (data.errors) {
@@ -151,33 +161,60 @@ function App() {
 
 
   const fetchISS = async () => {
+    setIssError(null);
     try {
       const res = await fetch(ISS_API);
+      if (res.status === 429) {
+        setIssError('ISS API rate limit hit (429). Please wait 30 seconds.');
+        return;
+      }
+      
       const data = await res.json();
+      if (!data || data.latitude === undefined) {
+        setIssError('Malformed API response');
+        return;
+      }
+      
       const lat = parseFloat(data.latitude);
       const lng = parseFloat(data.longitude);
       const timestamp = data.timestamp;
       const velocity = data.velocity;
+
+      if (isNaN(lat) || isNaN(lng)) {
+        setIssError('Invalid coordinates received');
+        return;
+      }
+
       updateState(lat, lng, timestamp, velocity);
     } catch (err) {
+      setIssError('Connection failed. Is your internet working?');
       console.error('ISS fetch error', err);
     }
   };
 
   const updateState = async (lat, lng, timestamp, velocity) => {
+    // Crucial: check for valid numbers before updating state/map
+    if (isNaN(lat) || isNaN(lng)) return;
+
     const timeStr = new Date(timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    
     setPositions(prev => {
       const newPos = [...prev, { lat, lng, timestamp, timeStr }].slice(-50);
       const currentSpeed = velocity ? Math.round(velocity) : 27600;
       setSpeedData(prevSpeed => [...prevSpeed, { time: timeStr, speed: currentSpeed }].slice(-20));
+      
+      // Only update marker if coordinates are valid
       if (markerRef.current) markerRef.current.setLatLng([lat, lng]);
       if (polylineRef.current) polylineRef.current.setLatLngs(newPos.map(p => [p.lat, p.lng]));
+      
       if (prev.length === 0 && mapRef.current) mapRef.current.setView([lat, lng], 3);
       return newPos;
     });
 
     try {
+      // Only geocode if coordinates are valid
       const geoRes = await fetch(GEOCODE_API(lat, lng));
+      if (!geoRes.ok) return;
       const geoData = await geoRes.json();
       setCurrentLocation(geoData.city || geoData.locality || geoData.principalSubdivision || 'Over Ocean / Remote Area');
     } catch {
@@ -217,19 +254,28 @@ function App() {
         <div className="card-header">
           <h2 className="card-title">ISS Live Tracking</h2>
           <div style={{display:'flex', gap:'8px'}}>
-            <button className="btn" onClick={fetchISS}>Refresh Now</button>
-            <button className="btn" style={{borderColor: '#22c55e', color:'#22c55e'}}>Auto-Refresh: ON</button>
+            <button className="btn" onClick={fetchISS} disabled={issLoading}>
+              {issLoading ? 'Fetching...' : 'Refresh Now'}
+            </button>
+            <button className="btn" style={{borderColor: '#22c55e', color:'#22c55e'}}>Auto-Update: 20s</button>
           </div>
         </div>
+
+        {issError ? (
+          <div className="error-banner" style={{background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '12px', borderRadius: '8px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+            <span>⚠️ {issError}</span>
+            <button className="btn btn-sm" onClick={fetchISS} style={{padding: '4px 12px', fontSize: '0.8rem'}}>Try Again</button>
+          </div>
+        ) : null}
 
         <div className="stats-row">
           <div className="stat-item">
             <div className="stat-label">Latitude / Longitude</div>
-            <div className="stat-value">{lastPos.lat.toFixed(3)}, {lastPos.lng.toFixed(3)}</div>
+            <div className="stat-value">{positions.length > 0 ? `${lastPos.lat.toFixed(3)}, ${lastPos.lng.toFixed(3)}` : '---'}</div>
           </div>
           <div className="stat-item">
             <div className="stat-label">Speed</div>
-            <div className="stat-value">{currentSpeed.toLocaleString()} km/h</div>
+            <div className="stat-value">{positions.length > 0 ? `${currentSpeed.toLocaleString()} km/h` : '---'}</div>
           </div>
           <div className="stat-item">
             <div className="stat-label">Nearest Place</div>
