@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
-  Tooltip, 
+  Tooltip,
   ResponsiveContainer,
   AreaChart,
   Area,
@@ -73,12 +73,12 @@ function App() {
     if (e) e.preventDefault();
     if (!chatInput.trim()) return;
 
-    const userMessage = { 
-      role: 'user', 
-      text: chatInput, 
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+    const userMessage = {
+      role: 'user',
+      text: chatInput,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
-    
+
     setMessages(prev => [...prev, userMessage]);
     setChatInput('');
     setIsTyping(true);
@@ -110,10 +110,10 @@ DASHBOARD DATA:
       const data = await response.json();
       let botText = (Array.isArray(data) && data[0]?.generated_text) ? data[0].generated_text.trim() : (data.error || "Error processing request.");
 
-      setMessages(prev => [...prev, { 
-        role: 'bot', 
-        text: botText, 
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+      setMessages(prev => [...prev, {
+        role: 'bot',
+        text: botText,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }]);
     } catch (err) {
       setMessages(prev => [...prev, { role: 'bot', text: 'Connection failed.', timestamp: '--:--' }]);
@@ -159,7 +159,7 @@ DASHBOARD DATA:
       setLoading(false);
       setIssLoading(false);
     };
-    
+
     init();
     const interval = setInterval(fetchISS, 30000); // Increased to 30s for better rate-limit safety
 
@@ -233,7 +233,7 @@ DASHBOARD DATA:
     setIssLoading(true);
     try {
       const res = await fetch(ISS_API);
-      
+
       if (res.status === 429) {
         console.warn('Primary API rate limited. Attempting fallback...');
         // Fallback to Open Notify for basic coordinates if primary fails
@@ -250,7 +250,7 @@ DASHBOARD DATA:
 
       const data = await res.json();
       if (!data || data.latitude === undefined) return;
-      
+
       updateState(parseFloat(data.latitude), parseFloat(data.longitude), data.timestamp, data.velocity);
     } catch (err) {
       setIssError('Telemetry connection failed');
@@ -262,7 +262,7 @@ DASHBOARD DATA:
   const updateState = async (lat, lng, timestamp, velocity) => {
     if (isNaN(lat) || isNaN(lng)) return;
     const timeStr = new Date(timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const currentSpeedVal = velocity ? Math.round(velocity) : (speedData.length > 0 ? speedData[speedData.length-1].speed : 27600);
+    const currentSpeedVal = velocity ? Math.round(velocity) : (speedData.length > 0 ? speedData[speedData.length - 1].speed : 27600);
 
     // Update positions
     setPositions(prev => {
@@ -319,13 +319,13 @@ DASHBOARD DATA:
       <main className="card tracking-card">
         <div className="card-header">
           <h2 className="card-title">International Space Station Live Tracking</h2>
-          <div style={{display:'flex', gap:'8px'}}>
+          <div style={{ display: 'flex', gap: '8px' }}>
             <button className="btn" onClick={fetchISS} disabled={issLoading}>Refresh</button>
-            <button className="btn" style={{borderColor: '#22c55e', color:'#22c55e'}}>Auto: 20s</button>
+            <button className="btn" style={{ borderColor: '#22c55e', color: '#22c55e' }}>Auto: 20s</button>
           </div>
         </div>
 
-        {issError && <div className="error-banner" style={{background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '12px', borderRadius: '8px', marginBottom: '16px'}}>⚠️ {issError}</div>}
+        {issError && <div className="error-banner" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '12px', borderRadius: '8px', marginBottom: '16px' }}>⚠️ {issError}</div>}
 
         <div className="stats-row">
           <div className="stat-item">
@@ -338,7 +338,7 @@ DASHBOARD DATA:
           </div>
           <div className="stat-item">
             <div className="stat-label">Location</div>
-            <div className="stat-value" style={{fontSize:'0.9rem'}}>{currentLocation}</div>
+            <div className="stat-value" style={{ fontSize: '0.9rem' }}>{currentLocation}</div>
           </div>
           <div className="stat-item">
             <div className="stat-label">Positions</div>
@@ -359,15 +359,15 @@ DASHBOARD DATA:
             <AreaChart data={speedData}>
               <defs>
                 <linearGradient id="colorSpeed" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
               <XAxis dataKey="time" hide />
               <YAxis domain={['dataMin - 50', 'dataMax + 50']} hide />
               <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: '8px' }} />
-              <Area type="monotone" dataKey="speed" stroke="#3b82f6" fillOpacity={1} fill="url(#colorSpeed)" strokeWidth={3} isAnimationActive={true}/>
+              <Area type="monotone" dataKey="speed" stroke="#3b82f6" fillOpacity={1} fill="url(#colorSpeed)" strokeWidth={3} isAnimationActive={true} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -385,35 +385,35 @@ DASHBOARD DATA:
             ))}
           </div>
           <div className="news-controls">
-            <input type="text" placeholder="Search..." className="search-input" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}/>
+            <input type="text" placeholder="Search..." className="search-input" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             <select className="btn" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
               <option value="publishedAt">Date</option>
               <option value="source">Source</option>
             </select>
           </div>
           <div className="news-list">
-            {newsLoading ? [...Array(6)].map((_, i) => <div key={i} className="skeleton-card skeleton"></div>) : 
-             filteredArticles.map((article, i) => (
-              <article key={i} className="news-item">
-                <div className="news-img-container"><img src={article.image || 'https://via.placeholder.com/500'} className="news-img" /></div>
-                <div className="news-content">
-                  <div className="news-meta"><span>{article.source?.name}</span><span>{new Date(article.publishedAt).toLocaleDateString()}</span></div>
-                  <h3>{article.title}</h3>
-                  <p>{article.description}</p>
-                  <div className="news-footer"><small>By {article.author || 'Unknown'}</small><a href={article.url} target="_blank" className="btn">Read</a></div>
-                </div>
-              </article>
-            ))}
+            {newsLoading ? [...Array(6)].map((_, i) => <div key={i} className="skeleton-card skeleton"></div>) :
+              filteredArticles.map((article, i) => (
+                <article key={i} className="news-item">
+                  <div className="news-img-container"><img src={article.image || 'https://via.placeholder.com/500'} className="news-img" /></div>
+                  <div className="news-content">
+                    <div className="news-meta"><span>{article.source?.name}</span><span>{new Date(article.publishedAt).toLocaleDateString()}</span></div>
+                    <h3>{article.title}</h3>
+                    <p>{article.description}</p>
+                    <div className="news-footer"><small>By {article.author || 'Unknown'}</small><a href={article.url} target="_blank" className="btn">Read</a></div>
+                  </div>
+                </article>
+              ))}
           </div>
         </section>
 
         <div className="side-charts">
           <section className="card distribution-card">
             <div className="card-header"><h2 className="card-title">Distribution</h2></div>
-            <div className="doughnut-container" style={{height: '200px'}}>
+            <div className="doughnut-container" style={{ height: '200px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={doughnutData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" onClick={(data) => setActiveCategory(data.catId)} style={{cursor: 'pointer'}}>
+                  <Pie data={doughnutData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" onClick={(data) => setActiveCategory(data.catId)} style={{ cursor: 'pointer' }}>
                     {doughnutData.map((entry, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
                   </Pie>
                   <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: '8px' }} />
@@ -422,8 +422,8 @@ DASHBOARD DATA:
             </div>
             <div className="legend">
               {doughnutData.map((entry, index) => (
-                <div key={index} className="legend-item" style={{display:'flex', gap:'8px', fontSize:'0.7rem', marginBottom:'4px'}}>
-                  <div style={{width:'8px', height:'8px', background:COLORS[index % COLORS.length]}}></div>
+                <div key={index} className="legend-item" style={{ display: 'flex', gap: '8px', fontSize: '0.7rem', marginBottom: '4px' }}>
+                  <div style={{ width: '8px', height: '8px', background: COLORS[index % COLORS.length] }}></div>
                   <span>{entry.name}: {entry.value}</span>
                 </div>
               ))}
@@ -436,7 +436,7 @@ DASHBOARD DATA:
               {astros.people.map((p, i) => (
                 <div key={i} className="astro-item">
                   <div className="astro-avatar">{p.name.charAt(0)}</div>
-                  <div className="astro-info"><div style={{fontWeight:'700'}}>{p.name}</div><div style={{fontSize:'0.7rem'}}>{p.craft}</div></div>
+                  <div className="astro-info"><div style={{ fontWeight: '700' }}>{p.name}</div><div style={{ fontSize: '0.7rem' }}>{p.craft}</div></div>
                 </div>
               ))}
             </div>
