@@ -229,48 +229,47 @@ DASHBOARD DATA:
   };
 
   const fetchISS = async () => {
+    const now = Date.now();
+    if (isFetchingRef.current || (now - lastFetchTime.current < 2000)) return;
+    
+    isFetchingRef.current = true;
     setIssError(null);
     setIssLoading(true);
     try {
       const res = await fetch(ISS_API);
-
+      lastFetchTime.current = Date.now();
+      
       if (res.status === 429) {
-        console.warn('Primary API rate limited. Attempting fallback...');
-        // Fallback to Open Notify for basic coordinates if primary fails
-        const fallbackRes = await fetch('http://api.open-notify.org/iss-now.json');
-        if (fallbackRes.ok) {
-          const fbData = await fallbackRes.json();
-          updateState(parseFloat(fbData.iss_position.latitude), parseFloat(fbData.iss_position.longitude), fbData.timestamp, null);
-          setIssError('Using backup telemetry (Primary API rate-limited)');
-        } else {
-          setIssError('Telemetry unavailable. Retrying in 30s...');
-        }
+        setIssError('Telemetry rate limit hit. Retrying in 30s...');
         return;
       }
-
       const data = await res.json();
       if (!data || data.latitude === undefined) return;
-
+      
+      setAltitude(data.altitude);
+      setVisibility(data.visibility || 'unknown');
       updateState(parseFloat(data.latitude), parseFloat(data.longitude), data.timestamp, data.velocity);
     } catch (err) {
       setIssError('Telemetry connection failed');
     } finally {
       setIssLoading(false);
+      isFetchingRef.current = false;
     }
   };
 
   const updateState = async (lat, lng, timestamp, velocity) => {
     if (isNaN(lat) || isNaN(lng)) return;
     const timeStr = new Date(timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const currentSpeedVal = velocity ? Math.round(velocity) : (speedData.length > 0 ? speedData[speedData.length - 1].speed : 27600);
+    
+    // High-precision speed (2 decimal places)
+    const currentSpeedVal = velocity ? parseFloat(velocity).toFixed(2) : (speedData.length > 0 ? speedData[speedData.length - 1].speed.toString() : '27600.00');
 
-    // Update positions
     setPositions(prev => {
       const newPos = [...prev, { lat, lng, timestamp, timeStr }].slice(-50);
       if (markerRef.current) {
         markerRef.current.setLatLng([lat, lng]);
         markerRef.current.getPopup().setContent(`
-          <b>ISS Position</b><br/>Lat: ${lat.toFixed(4)}<br/>Lng: ${lng.toFixed(4)}<br/>Speed: ${currentSpeedVal.toLocaleString()} km/h
+          <b>ISS Position</b><br/>Lat: ${lat.toFixed(4)}<br/>Lng: ${lng.toFixed(4)}<br/>Speed: ${currentSpeedVal} km/h
         `);
       }
       if (polylineRef.current) polylineRef.current.setLatLngs(newPos.map(p => [p.lat, p.lng]));
@@ -278,8 +277,7 @@ DASHBOARD DATA:
       return newPos;
     });
 
-    // Update Speed Data (last 30)
-    setSpeedData(prev => [...prev, { time: timeStr, speed: currentSpeedVal }].slice(-30));
+    setSpeedData(prev => [...prev, { time: timeStr, speed: parseFloat(currentSpeedVal) }].slice(-30));
 
     try {
       const geoRes = await fetch(GEOCODE_API(lat, lng));
